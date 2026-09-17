@@ -1305,6 +1305,116 @@ function misspellingLookup(lw){
   return null;
 }
 
+// ---------------------------------------------------------------
+// 3d. AMERICAN SPELLINGS
+//     The dictionary is British, so American forms fail it and come out
+//     as misspellings. Naming them properly is worth doing anyway, and
+//     it is what makes "ignore American spellings" possible.
+//
+//     Rather than generating American variants of all 114,500 British
+//     words and indexing them, the rules run backwards on the token in
+//     hand: "color" is turned into "colour" and the dictionary is asked.
+//     That costs nothing, needs no index, and is self-checking — a rule
+//     misfiring on "doctor" produces "doctour", which is not a word, so
+//     the candidate is simply dropped. Only tokens that have already
+//     failed the dictionary ever reach here, so no British spelling can
+//     be caught by it.
+// ---------------------------------------------------------------
+
+// Pairs no rule derives: different words rather than different endings.
+const AMERICAN_IRREGULARS = {
+  plow:"plough", plows:"ploughs", plowed:"ploughed", plowing:"ploughing",
+  mold:"mould", molds:"moulds", molded:"moulded", molding:"moulding",
+  moldy:"mouldy", molt:"moult", molted:"moulted", smolder:"smoulder",
+  smoldering:"smouldering", boulder:"boulder",
+  gray:"grey", grays:"greys", grayer:"greyer", grayest:"greyest",
+  grayish:"greyish", grayed:"greyed", jewelry:"jewellery",
+  aluminum:"aluminium", pajamas:"pyjamas", pajama:"pyjama",
+  skeptic:"sceptic", skeptics:"sceptics", skeptical:"sceptical",
+  skeptically:"sceptically", skepticism:"scepticism",
+  airplane:"aeroplane", airplanes:"aeroplanes", donut:"doughnut",
+  donuts:"doughnuts", specialty:"speciality", specialties:"specialities",
+  artifact:"artefact", artifacts:"artefacts", carburetor:"carburettor",
+  sulfur:"sulphur", sulfate:"sulphate", sulfide:"sulphide",
+  sulfuric:"sulphuric", cozy:"cosy", cozier:"cosier", coziest:"cosiest",
+  cozily:"cosily", mustache:"moustache", mustaches:"moustaches",
+  omelet:"omelette", omelets:"omelettes", persnickety:"pernickety",
+  maneuver:"manoeuvre", maneuvers:"manoeuvres", maneuvered:"manoeuvred",
+  maneuvering:"manoeuvring", maneuverable:"manoeuvrable",
+  furor:"furore", math:"maths", mom:"mum", moms:"mums", ax:"axe",
+  checkered:"chequered", tidbit:"titbit", tidbits:"titbits",
+  aging:"ageing", judgment:"judgement", judgments:"judgements",
+  fulfillment:"fulfilment", enrollment:"enrolment",
+  installment:"instalment", skillful:"skilful", skillfully:"skilfully",
+  willful:"wilful", willfully:"wilfully", instill:"instil",
+  distill:"distil", fulfill:"fulfil", fulfills:"fulfils", appall:"appal",
+  appalls:"appals", annex:"annexe", dexterously:"dextrously",
+  gases:"gasses", vise:"vice", curb:"kerb", curbs:"kerbs",
+  spelled:"spelt", burned:"burnt", dreamed:"dreamt", leaped:"leapt",
+  kneeled:"knelt", smelled:"smelt", spilled:"spilt", spoiled:"spoilt",
+  learned:"learnt"
+};
+
+// Endings that take an American spelling with them, so the rule can tell a
+// suffix boundary from the middle of a word.
+const AM_SUFFIX = "(s|es|ed|ing|er|ers|est|ly|ment|ments|able|ably|ful|less|ist|ists|ism|ite|ites|ation|ations)?$";
+
+function americanCandidates(w){
+  const out = [];
+  const add = c => { if(c && c !== w && out.indexOf(c) === -1) out.push(c); };
+
+  // color -> colour, favorite -> favourite, honorable -> honourable
+  add(w.replace(new RegExp("or" + AM_SUFFIX), (m,s)=> "our" + (s||"")));
+  // organize -> organise, organization -> organisation, analyze -> analyse
+  add(w.replace(/iz(?=[ea])/g, "is"));
+  add(w.replace(/yz(?=[ea])/g, "ys"));
+  // center -> centre, theater -> theatre, fiber -> fibre
+  add(w.replace(/er(s)?$/, (m,s)=> "re" + (s||"")));
+  // catalog -> catalogue, dialog -> dialogue
+  add(w.replace(/og(s|ue)?$/, "ogue"));
+  // traveled -> travelled, marvelous -> marvellous, counselor -> counsellor
+  add(w.replace(/l(ed|ing|er|ers|or|ors|ous|ously|ery)$/, (m,s)=> "ll" + s));
+  // defense -> defence, license -> licence, pretense -> pretence
+  add(w.replace(/nse(s|d)?$/, (m,s)=> "nce" + (s||"")));
+  // fulfill -> fulfil, skillful -> skilful
+  add(w.replace(/ll(ment|ful|fully)?$/, (m,s)=> "l" + (s||"")));
+  // program -> programme, gram -> gramme
+  add(w.replace(/gram(s)?$/, (m,s)=> "gramme" + (s||"")));
+  // anemia -> anaemia, fetus -> foetus, medieval -> mediaeval
+  // The classical digraphs are restored one "e" at a time and the
+  // dictionary throws out everything that was not a word to begin with.
+  let from = 0, found = 0;
+  while(found < 4){
+    const i = w.indexOf("e", from);
+    if(i === -1) break;
+    add(w.slice(0,i) + "ae" + w.slice(i+1));
+    add(w.slice(0,i) + "oe" + w.slice(i+1));
+    from = i + 1; found++;
+  }
+  return out;
+}
+
+const americanCache = new Map();
+
+// Returns the British form of an American spelling, or null. Only sensible
+// for a token that is not already in the dictionary.
+function americanSpelling(lw){
+  if(americanCache.has(lw)) return americanCache.get(lw);
+  let result = null;
+  const irregular = AMERICAN_IRREGULARS[lw];
+  if(irregular && DICTIONARY.has(irregular)) result = irregular;
+  else {
+    let best = null, bestRank = Infinity;
+    for(const c of americanCandidates(lw)){
+      if(!DICTIONARY.has(c)) continue;
+      const r = RANK.has(c) ? RANK.get(c) : WORD_LIST.length;
+      if(r < bestRank){ best = c; bestRank = r; }
+    }
+    result = best;
+  }
+  americanCache.set(lw, result);
+  return result;
+}
 // ---- suggestion ranking ----
 // Scored in bands rather than on one continuous scale. An orthographic
 // near-miss used to beat a phonetic match every time, because a single
@@ -3275,12 +3385,200 @@ function punctuationIssues(text, add){
 const MAX_CHECK_LEN = 2000000;
 const CAT_PRIORITY = { spelling:4, grammar:3, punctuation:2, confusable:1, style:0 };
 
+// ===============================================================
+// 8b. READABILITY
+//     Flesch weights syllables-per-word at 84.6, so the whole measure
+//     rests on the syllable count being right. The previous counter was
+//     a single vowel-group regex, which got a little under six words in
+//     ten correct — enough to move the published score by ten points or
+//     more on ordinary prose.
+//
+//     Sentence counting matters almost as much. Headings, bullets and
+//     list items rarely end in a full stop, so a document full of them
+//     reads as one enormous sentence. Readability therefore does its own
+//     splitting, breaking at line ends as well as at terminal
+//     punctuation; the grammar rules keep the sentence boundaries they
+//     have always had, because changing those would change their
+//     verdicts.
+// ===============================================================
+
+// Words the rules below get wrong, and common enough to be worth stating.
+const SYLLABLE_EXCEPTIONS = {
+  // -ea and friends that the hiatus rules would over-split
+  sea:1, tea:1, pea:1, plea:1, flea:1, yea:1, lea:1, quay:1,
+  people:2, peoples:2, jeopardy:3, leopard:2, friend:1, friends:1, friendly:2,
+  does:1, doesnt:2, goes:1, shoes:1, toes:1, foes:1, woes:1, hoes:1,
+  // silent and near-silent endings
+  queue:1, queues:1, choir:2, choirs:2, business:2, businesses:3,
+  beautiful:3, beauty:2, beauties:2, aisle:1, isle:1, suite:1,
+  // -ism / -thm
+  rhythm:2, rhythms:2, rhythmic:3, prism:2, schism:2, chasm:2, spasm:2,
+  // hiatus the rules miss
+  idea:3, ideas:3, area:3, areas:3, urea:3, nausea:3, cornea:3, trachea:3,
+  create:2, creates:2, created:3, creating:3, creation:3, creative:3,
+  creature:2, creatures:2, react:2, reacts:2, reaction:3, really:2,
+  real:1, realise:3, realised:3, realises:3, realising:4, realism:3,
+  reality:4, realities:4, idealism:5, theatre:2, theatres:2,
+  science:2, sciences:2, scientific:4, scientist:3, conscience:2,
+  ancient:2, patient:2, patients:2, efficient:3, sufficient:3,
+  // -le and -tle endings the final-e rule can trip on
+  cooperate:4, cooperates:4, cooperated:5, cooperation:5, cooperative:5,
+  coordinate:4, coordinates:4, coordinated:5, coordination:5, coordinator:5,
+  coexist:3, coincide:3, coincidence:4, coincidental:5, coauthor:3,
+  little:2, middle:2, simple:2, subtle:2, castle:2, whistle:2, muscle:2,
+  // common polysyllables worth pinning down
+  every:2, everyone:3, everything:3, everybody:4, family:3, families:3,
+  camera:3, cameras:3, chocolate:3, different:3, difference:3, interest:3,
+  interesting:4, comfortable:4, vegetable:4, restaurant:3, temperature:4,
+  library:3, February:4, Wednesday:2, average:3, evening:2, several:3,
+  general:3, natural:3, federal:3, literature:4, favourite:3, favourites:3,
+  machine:2, machines:2, routine:2, ballet:2, buffet:2, cafe:2, resume:3,
+  recipe:3, recipes:3, simile:3, apostrophe:4, catastrophe:4, hyperbole:4,
+  epitome:4, sesame:3, finale:3, karate:3, adobe:3, anemone:4,
+  // short words the length shortcut would mishandle
+  ion:2, ions:2, eon:2, aeon:2, oil:1, our:1, hour:1, hours:1, fire:1,
+  fires:1, hire:1, wire:1, tire:1, tired:1, hired:1, iron:2, irons:2,
+  lion:2, lions:2, diet:2, quiet:2, riot:2, poem:2, poems:2, poet:2,
+  giant:2, client:2, via:2, prior:2, trial:1,
+  dial:1, vial:1, being:2, doing:2, going:2, seeing:2, saying:2
+};
+
+// Syllables added by an ending, used when the stem is a listed exception:
+// "creating" is not in the table but "create" is.
+const SUFFIX_SYLLABLES = { s:0, es:1, ed:0, d:0, ing:1, ly:1, ness:1, ment:1, ful:1, less:1 };
+
+function vowelGroups(s){
+  const m = s.match(/[aeiouy]+/g);
+  return m ? m.length : 0;
+}
+
 function countSyllables(word){
-  const w = word.toLowerCase().replace(/[^a-z]/g,"");
-  if(w.length <= 3) return 1;
-  const stripped = w.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/,"").replace(/^y/,"");
-  const groups = stripped.match(/[aeiouy]{1,2}/g);
-  return Math.max(1, groups ? groups.length : 1);
+  let w = String(word).toLowerCase().replace(/[^a-z]/g, "");
+  if(!w) return 0;
+  if(SYLLABLE_EXCEPTIONS[w] != null) return SYLLABLE_EXCEPTIONS[w];
+
+  // an inflected form of a word that is in the table
+  for(const suf in SUFFIX_SYLLABLES){
+    if(!w.endsWith(suf) || w.length <= suf.length + 1) continue;
+    const stem = w.slice(0, -suf.length);
+    let base = SYLLABLE_EXCEPTIONS[stem];
+    if(base == null && suf !== "s" && suf !== "d") base = SYLLABLE_EXCEPTIONS[stem + "e"];
+    if(base != null){
+      let n = base + SUFFIX_SYLLABLES[suf];
+      // "-es" only adds a beat after a sibilant: "boxes" does, "makes" does not
+      if(suf === "es" && !/(s|x|z|ch|sh|ce|ge)$/.test(stem)) n -= 1;
+      // a stem ending in silent "e" loses it before "-ing": create -> creating
+      if(suf === "ing" && SYLLABLE_EXCEPTIONS[stem + "e"] != null) n = base + 1;
+      return Math.max(1, n);
+    }
+  }
+
+  let extra = 0;
+
+  // "-ed" is only a beat after t or d: "wanted" has one, "jumped" does not
+  if(/ed$/.test(w) && !/[td]ed$/.test(w) && /[^aeiouy]ed$/.test(w)) w = w.slice(0, -2);
+
+  // A final "e" is usually silent, but "-le" after a consonant carries the
+  // syllable ("table"), and so does a final "-ee", "-oe" or "-ye".
+  if(/[^aeiouy]e$/.test(w) && !/[^aeiouy]le$/.test(w) && w.length > 3) w = w.slice(0, -1);
+  else if(/[^aeiouy]es$/.test(w) && !/(s|x|z|ch|sh|c|g)es$/.test(w) && w.length > 4) w = w.slice(0, -2);
+
+  // Syllabic consonant endings with no vowel of their own: rhythm, prism.
+  if(/(sm|thm|sms|thms)$/.test(w) && !/[aeiouy][^aeiouy]*$/.test(w.slice(-3, -2))) extra += 1;
+  else if(/(sm|thm)$/.test(w) && vowelGroups(w) === 1 && /y/.test(w)) extra += 1;
+
+  // Vowel pairs pronounced as two beats. Each is blocked after the letters
+  // that fuse it back into one: "-tion" and "-cial" are single syllables,
+  // "radio" and "actual" are not.
+  const HIATUS = [
+    [/[^ctsx]ia/g, 0], [/^ia/g, 0],
+    [/[^ctsxln]io/g, 0], [/^io/g, 0],
+    [/[^gq]ua/g, 0], [/[^gq]uo/g, 0],
+    [/[^p]eo/g, 0], [/ii/g, 0], [/[^q]ui[aeo]/g, 0],
+    [/[^ctsx]ie[tn]/g, 0], [/oe[mtn]/g, 0], [/[^aeiouy]ism$/g, 0]
+  ];
+  for(const [re] of HIATUS){ const m = w.match(re); if(m) extra += m.length; }
+  if(/[^aeiouys]ea$/.test(w)) extra += 1;          // idea, area, nausea
+
+  return Math.max(1, vowelGroups(w) + extra);
+}
+
+// Readability counts a run of digits as a word, and reads it at roughly a
+// syllable a digit, because "2024" is spoken and Flesch is a model of speech.
+function readabilityUnits(text){
+  const units = [];
+  const re = /[A-Za-z]+(?:['\u2019][A-Za-z]+)*|\d+(?:[.,]\d+)*/g;
+  let m;
+  while((m = re.exec(text))){
+    const raw = m[0];
+    units.push({ raw, start: m.index, end: m.index + raw.length,
+      syllables: /^\d/.test(raw)
+        ? Math.max(1, raw.replace(/[^0-9]/g, "").length)
+        : countSyllables(raw) });
+  }
+  return units;
+}
+
+// Sentence boundaries for readability only. Terminal punctuation as usual,
+// plus the end of any line that does not have it — a heading or a bullet is
+// a unit a reader finishes, whatever the punctuation says.
+function readabilitySentenceCount(text, units){
+  if(!units.length) return 0;
+  const cuts = [];
+  const boundary = /([.!?]+)(["'\u201d\u2019)\]]*)(\s|$)/g;
+  let m;
+  while((m = boundary.exec(text))){
+    const before = text.slice(0, m.index);
+    const lastWord = (before.match(/([A-Za-z]+)$/) || [])[1];
+    if(lastWord && ABBREVIATIONS.has(lastWord.toLowerCase()) && m[1] === ".") continue;
+    if(lastWord && lastWord.length === 1 && m[1] === ".") continue;
+    cuts.push(m.index + m[1].length + m[2].length);
+  }
+  const lineEnd = /\n+/g;
+  while((m = lineEnd.exec(text))) cuts.push(m.index);
+  cuts.push(text.length);
+
+  const sorted = Array.from(new Set(cuts)).sort((a,b)=>a-b);
+  let count = 0, cursor = 0, ui = 0;
+  for(const cut of sorted){
+    if(cut <= cursor) continue;
+    let any = false;
+    while(ui < units.length && units[ui].start < cut){ ui++; any = true; }
+    if(any) count++;
+    cursor = cut;
+  }
+  return Math.max(1, count);
+}
+
+const GRADE_NAMES = [
+  [1,"reception"], [6,"primary school"], [9,"lower secondary"],
+  [11,"GCSE"], [13,"A level"], [16,"undergraduate"], [99,"postgraduate"]
+];
+function describeGrade(g){
+  for(const [max,name] of GRADE_NAMES) if(g <= max) return name;
+  return "postgraduate";
+}
+
+function computeReadability(text){
+  const units = readabilityUnits(text);
+  const words = units.length;
+  if(words < 3) return { ease:null, grade:null, words, provisional:true };
+  const syllables = units.reduce((s,u)=> s + u.syllables, 0);
+  const sentences = Math.max(1, readabilitySentenceCount(text, units));
+  const wps = words / sentences;
+  const spw = syllables / words;
+  const ease  = Math.max(0, Math.min(100, Math.round(206.835 - 1.015*wps - 84.6*spw)));
+  const grade = Math.max(0, Math.round((0.39*wps + 11.8*spw - 15.59) * 10) / 10);
+  return {
+    ease, grade, words, sentences, syllables,
+    wordsPerSentence: Math.round(wps*10)/10,
+    syllablesPerWord: Math.round(spw*100)/100,
+    gradeLabel: describeGrade(grade),
+    // Flesch is a regression fitted to passages, not to sentences. Under
+    // about thirty words the number swings wildly on a single long word, so
+    // it is reported as a rough reading rather than a measurement.
+    provisional: words < 30
+  };
 }
 
 function analyze(rawText, options){
@@ -3405,6 +3703,19 @@ function analyze(rawText, options){
       }
       return;
     }
+    // American spellings are absent from a British dictionary, so they arrive
+    // here looking like misspellings. Naming them for what they are is more
+    // use than a guess, and it is what lets the option wave them through.
+    const british = americanSpelling(lw);
+    if(british){
+      if(opts.ignoreAmerican) return;
+      add({ cat:"spelling", rule:"american", severity:"critical",
+        start:t.start, end:t.end, original:t.raw,
+        suggestions:[/^[A-Z]/.test(t.raw) ? british[0].toUpperCase()+british.slice(1) : british],
+        title:"American spelling",
+        why:'"'+british+'" is the British form. Tick "Ignore American spellings" if that is deliberate.' });
+      return;
+    }
     // days, months and nationalities are handled by the capitalisation rule,
     // which gives a far more useful note than "not in the dictionary"
     if(PROPER_NOUNS_LOWER.has(lw)) return;
@@ -3495,10 +3806,8 @@ function analyze(rawText, options){
   // ---- document statistics ----
   const words = tokens.length;
   const chars = rawText.length;
-  const syllables = tokens.reduce((sum,t)=> sum + countSyllables(t.raw), 0);
-  const sentCount = Math.max(1, sentences.length);
-  const flesch = words ? 206.835 - 1.015*(words/sentCount) - 84.6*(syllables/words) : 100;
-  const readability = Math.max(0, Math.min(100, Math.round(flesch)));
+  const read = computeReadability(text);
+  const readability = read.ease == null ? 100 : read.ease;
 
   let penalty = 0;
   kept.forEach(iss => {
@@ -3511,7 +3820,11 @@ function analyze(rawText, options){
 
   return { tokens, sentences, issues: kept, truncated,
            stats:{ words, chars, sentences: sentences.length, readability, score,
-                   readingTime: Math.max(1, Math.round(words / 225)) } };
+                   readingTime: Math.max(1, Math.round(words / 225)),
+                   ease: read.ease, grade: read.grade, gradeLabel: read.gradeLabel,
+                   wordsPerSentence: read.wordsPerSentence,
+                   syllablesPerWord: read.syllablesPerWord,
+                   easeProvisional: read.provisional, readWords: read.words } };
 }
 // ===============================================================
 // 9. INTERFACE
@@ -3532,6 +3845,51 @@ const scoreLabel  = document.getElementById("scoreLabel");
 const btnFixAll   = document.getElementById("btnFixAll");
 const toggleConf  = document.getElementById("toggleConfusables");
 const btnUndo     = document.getElementById("btnUndo");
+
+function ensureOption(id, labelText){
+  const existing = document.getElementById(id);
+  if(existing) return existing;
+  const legend = (document.querySelector && document.querySelector(".legend")) ||
+                 (filtersEl && filtersEl.parentNode);
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.id = id;
+  if(!legend) return input;
+  const label = document.createElement("label");
+  label.appendChild(input);
+  label.appendChild(document.createTextNode(" " + labelText));
+  legend.appendChild(label);
+  return input;
+}
+function ensureButton(id, className, after){
+  const existing = document.getElementById(id);
+  if(existing) return existing;
+  const b = document.createElement("button");
+  b.id = id;
+  b.className = className;
+  b.disabled = true;
+  if(after && after.parentNode) after.parentNode.insertBefore(b, after.nextSibling);
+  return b;
+}
+function ensureStat(id, label){
+  const existing = document.getElementById(id);
+  if(existing) return existing;
+  const row = (document.querySelector && document.querySelector(".stats-row")) || null;
+  const value = document.createElement("b");
+  value.id = id;
+  value.textContent = "—";
+  if(!row) return value;
+  const span = document.createElement("span");
+  span.appendChild(document.createTextNode(label + " "));
+  span.appendChild(value);
+  row.appendChild(span);
+  return value;
+}
+
+const toggleAmerican  = ensureOption("toggleAmerican",
+  "Ignore American spellings — accept “color”, “organize” and “center” as written");
+const btnFixSpelling  = ensureButton("btnFixSpelling", "btn sans", btnFixAll);
+const statGrade       = ensureStat("statGrade", "Reading age");
 
 const CAT_LABEL = {
   spelling:"Spelling", grammar:"Grammar", punctuation:"Punctuation",
@@ -3598,7 +3956,9 @@ function describeEase(ease){
 
 function render(){
   const text = editor.value;
-  const result = analyze(text, { userDictionary, flagConfusables: toggleConf.checked });
+  const result = analyze(text, { userDictionary,
+                                 flagConfusables: toggleConf.checked,
+                                 ignoreAmerican: toggleAmerican.checked });
   lastResult = result;
   const visible = result.issues.filter(iss => !ignored.has(iss.key));
 
@@ -3606,9 +3966,21 @@ function render(){
   statWords.textContent = result.stats.words;
   statSent.textContent = result.stats.sentences;
   statRead.textContent = result.stats.readingTime + " min";
-  statEase.textContent = result.stats.words > 20
-    ? result.stats.readability + " · " + describeEase(result.stats.readability)
-    : "—";
+  const st = result.stats;
+  if(st.ease == null){
+    statEase.textContent = "—";
+    statGrade.textContent = "—";
+    statEase.title = "";
+  } else {
+    statEase.textContent = st.ease + " · " + describeEase(st.ease) +
+                           (st.easeProvisional ? " (rough)" : "");
+    statGrade.textContent = st.gradeLabel;
+    statEase.title = "Flesch reading ease " + st.ease +
+      ", Flesch–Kincaid grade " + st.grade + " (" + st.gradeLabel + "). " +
+      st.wordsPerSentence + " words per sentence, " +
+      st.syllablesPerWord + " syllables per word" +
+      (st.easeProvisional ? ". Under thirty words the figure moves a long way on a single long word, so treat it as a rough reading." : ".");
+  }
 
   // score ring
   const score = visible.length === result.issues.length ? result.stats.score : recomputeScore(result, visible);
@@ -3644,6 +4016,12 @@ function render(){
   const fixable = visible.filter(isConfidentFix);
   btnFixAll.disabled = fixable.length === 0;
   btnFixAll.textContent = fixable.length ? "Fix " + fixable.length + " confident " + (fixable.length === 1 ? "issue" : "issues") : "Nothing to fix yet";
+
+  const spellable = visible.filter(i => isSpellingFix(i) && i.suggestions.length);
+  btnFixSpelling.disabled = spellable.length === 0;
+  btnFixSpelling.textContent = spellable.length
+    ? "Fix " + spellable.length + " " + (spellable.length === 1 ? "misspelling" : "misspellings")
+    : "No misspellings";
 
   renderHighlights(text, visible);
 
@@ -3781,12 +4159,13 @@ function applyFix(issue, suggestion){
   render();
 }
 
-btnFixAll.addEventListener("click", () => {
+function applyBatch(filter){
   if(!lastResult) return;
-  remember();
   const fixes = lastResult.issues
-    .filter(i => !ignored.has(i.key) && isConfidentFix(i))
+    .filter(i => !ignored.has(i.key) && i.suggestions.length && filter(i))
     .sort((a,b) => b.start - a.start);   // back to front, so offsets stay valid
+  if(!fixes.length) return;
+  remember();
   let val = editor.value;
   let lastStart = Infinity;
   fixes.forEach(f => {
@@ -3798,7 +4177,21 @@ btnFixAll.addEventListener("click", () => {
   activeKey = null;
   render();
   editor.focus();
-});
+}
+
+// Every spelling correction the checker is willing to name, including the
+// texting shorthand and the American forms, but not the words it merely
+// failed to recognise: those are usually names, and their suggestions are
+// guesses. Confusables are left out too — "calender" really might be the
+// machine — so this stays a button that cannot quietly change your meaning.
+function isSpellingFix(issue){
+  return issue.cat === "spelling" &&
+         issue.rule !== "unknown" &&
+         issue.rule !== "confusable";
+}
+
+btnFixAll.addEventListener("click", () => applyBatch(isConfidentFix));
+btnFixSpelling.addEventListener("click", () => applyBatch(isSpellingFix));
 
 editor.addEventListener("scroll", () => { backdrop.scrollTop = editor.scrollTop; backdrop.scrollLeft = editor.scrollLeft; });
 
@@ -3808,6 +4201,7 @@ editor.addEventListener("input", () => {
   debounceTimer = setTimeout(render, 220);
 });
 toggleConf.addEventListener("change", render);
+toggleAmerican.addEventListener("change", render);
 
 document.getElementById("btnClear").addEventListener("click", () => {
   if(editor.value) remember();
