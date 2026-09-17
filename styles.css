@@ -1,4 +1,4 @@
-  :root{
+:root{
     --paper: #E8E1CD;
     --paper-deep: #DCD2B4;
     --card: #F6F1E2;
@@ -16,13 +16,15 @@
     --metro-font: 'Futura PT', 'Century Gothic', Futura, 'Avenir Next', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     --mono-font: 'Consolas', 'Roboto Mono', 'Courier New', monospace;
   }
-  *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;}
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  html{ -webkit-text-size-adjust: 100%; }
+  html,body{margin:0;padding:0; overflow-x:hidden;}
   body{
     background:var(--paper);
     color:var(--ink);
     font-family: var(--editor-font);
     min-height:100vh;
+    -webkit-font-smoothing: antialiased;
   }
   .sans{ font-family: var(--metro-font); }
 
@@ -76,6 +78,33 @@
     textarea#editor{ min-height: 260px; }
     .notes{ max-height: none; }
     .toolbar{ border-left: 2px solid var(--ink); flex: 1 1 100%; }
+    .btn{ flex: 1 1 auto; }
+  }
+
+  @media (max-width: 560px){
+    .wrap{ padding: 0 14px 32px; }
+    header{ margin: 0 -14px 20px; }
+    .title-tile{ padding: 22px 18px 20px; flex-basis: 100%; }
+    header h1{ font-size: 24px; margin-bottom: 6px; }
+    header p{ font-size: 12.5px; max-width: none; }
+    .toolbar{ flex-wrap: nowrap; }
+    .btn{ font-size: 12px; padding: 0 8px; min-height: 46px; white-space: nowrap; }
+    .card{ padding: 16px 16px; }
+    textarea#editor{ min-height: 220px; }
+    .stats-row{ gap: 12px 18px; font-size: 12px; }
+    .panel-heading{ flex-wrap: wrap; gap: 8px; }
+    .panel-heading h2{ font-size: 15px; }
+    .btn.primary{ font-size: 12px; padding: 8px 14px; min-height: 40px; }
+    .score{ flex-wrap: wrap; }
+    .score-tile{ width: 64px; }
+    .score-num{ font-size: 26px; }
+    .filters{ border-right: 2px solid var(--ink); }
+    .filter{ font-size: 11px; padding: 6px 10px; flex: 1 1 auto; text-align:center; }
+    .note{ padding: 10px 12px; }
+    .note-quote{ font-size: 15px; }
+    .note-actions{ width: 100%; flex-wrap: wrap; }
+    .chip{ flex: 1 1 auto; text-align:center; padding: 7px 10px; }
+    footer{ padding: 18px 16px; font-size: 12px; }
   }
 
   .card{
