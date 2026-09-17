@@ -12,6 +12,15 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Crockpot">
 <link rel="stylesheet" href="styles.css">
+<script>
+  (function(){
+    try{
+      var saved = localStorage.getItem("crockpot-theme");
+      var theme = saved || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      if (theme === "dark") document.documentElement.setAttribute("data-theme", "dark");
+    }catch(e){}
+  })();
+</script>
 </head>
 <body>
 <div class="wrap">
@@ -25,6 +34,7 @@
       <button class="btn sans" id="btnUndo" disabled>Undo</button>
       <button class="btn sans" id="btnExample">Load an example</button>
       <button class="btn sans" id="btnClear">Clear</button>
+      <button class="btn sans" id="btnDark" aria-pressed="false">Dark mode</button>
     </div>
   </header>
 
@@ -79,9 +89,15 @@
     <p>Spacing, missing apostrophes in real words (“cant”, “wont”, “hell go”), capitalisation of sentences, “I” and proper nouns, comma splices, unbalanced brackets and quotes; then a clarity pass for passive voice, wordy phrases, redundant pairs, hedging intensifiers and over-long sentences. The score is a weighted issue density, and reading ease is the Flesch formula over the syllable counts. Everything is computed in the browser from the rules above.</p>
   </footer>
 
+  <footer class="meta-footer">
+    <span class="version-tag">Crockpot Beta 1.1</span>
+    <a href="https://rzsy.github.io/Toolkit/index.html" target="_blank" rel="noopener noreferrer">For more tools from the same author, check this out</a>
+  </footer>
+
 </div>
 
 <script src="script.js"></script>
+<script src="dmode.js"></script>
 <script>
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
