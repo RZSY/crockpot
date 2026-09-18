@@ -1,21 +1,40 @@
-// Crockpot service worker — caches the app shell so it works offline once installed.
-const CACHE_NAME = "crockpot-v1";
+const CACHE_NAME = "crockpot-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
-  "./script.js",
   "./manifest.json",
+  "./dictionary.js",
+  "./lexicon.js",
+  "./spelling-engine.js",
+  "./tokenizer.js",
+  "./confusables.js",
+  "./grammar-rules.js",
+  "./punctuation.js",
+  "./document-analysis.js",
+  "./ui.js",
+  "./dmode.js",
+  "./icons/favicon.png",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon-192-maskable.png",
   "./icons/icon-512-maskable.png"
 ];
 
+function cachePrecacheList(cache) {
+  return Promise.all(
+    APP_SHELL.map((url) =>
+      cache.add(url).catch((err) => {
+        console.warn("Crockpot SW: could not precache", url, err);
+      })
+    )
+  );
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) => cachePrecacheList(cache))
       .then(() => self.skipWaiting())
   );
 });
@@ -31,8 +50,6 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Cache-first for app-shell files, falling back to network, and updating the
-// cache in the background whenever a request succeeds (stale-while-revalidate).
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
