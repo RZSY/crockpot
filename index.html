@@ -107,12 +107,47 @@
 <script src="ui.js"></script>
 <script src="dmode.js"></script>
 <script>
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("sw.js").catch(() => {
-      });
-    });
+if ("serviceWorker" in navigator) {
+  let refreshing = false;
+
+  function showUpdateBanner() {
+    if (document.getElementById("updateBanner")) return;
+    const b = document.createElement("div");
+    b.id = "updateBanner";
+    b.style.cssText = "position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:9999;background:#C23B1C;color:#fff;padding:10px 16px;border-radius:8px;font:14px system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);display:flex;gap:12px;align-items:center";
+    b.innerHTML = '<span>Update ready</span><button style="background:#fff;color:#C23B1C;border:0;border-radius:6px;padding:4px 10px;font-weight:600;cursor:pointer">Reload</button>';
+    b.querySelector("button").onclick = () => location.reload();
+    document.body.appendChild(b);
   }
+
+  // A new worker took control: reload if the editor is empty, otherwise ask
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshing || !sessionStorage.getItem("sw-had-controller")) return;
+    const editor = document.getElementById("editor");
+    if (!editor || !editor.value.trim()) {
+      refreshing = true;
+      location.reload();
+    } else {
+      showUpdateBanner(); // never reload over the user's text
+    }
+  });
+
+  window.addEventListener("load", () => {
+    // Only treat a controller change as an "update" if one already existed
+    if (navigator.serviceWorker.controller) sessionStorage.setItem("sw-had-controller", "1");
+
+    navigator.serviceWorker
+      .register("sw.js", { updateViaCache: "none" })
+      .then((reg) => {
+        const check = () => reg.update().catch(() => {});
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") check();
+        });
+        setInterval(check, 60 * 60 * 1000); // hourly while the app is open
+      })
+      .catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
