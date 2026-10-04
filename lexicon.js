@@ -1,15 +1,5 @@
 // ===============================================================
 // 2. LEXICON + MORPHOLOGY
-//    A lightweight, hand-built part-of-speech layer. Full statistical
-//    tagging is out of scope for a no-model checker, but almost every
-//    grammar rule below only needs to answer a handful of questions:
-//    is this word a pronoun, a determiner, a finite verb, a plural noun,
-//    an adjective? Closed classes (pronouns, determiners, modals,
-//    auxiliaries, prepositions) are listed exhaustively because they're
-//    small and finite; open classes are handled with frequency lists plus
-//    morphology (suffixes, irregular tables) and, crucially, the rules
-//    that depend on them are written to fail *silently* rather than
-//    guess — a missed error is much cheaper than a wrong correction.
 // ===============================================================
 const S = str => new Set(str.trim().split(/\s+/));
 
