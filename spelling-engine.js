@@ -1,8 +1,5 @@
 // ===============================================================
 // 3. SPELLING ENGINE
-//    Norvig-style known-edit generation over the British dictionary,
-//    re-ranked by a confusion-aware cost model, keyboard geometry,
-//    phonetics and word frequency.
 // ===============================================================
 
 // Common contractions the frequency corpus doesn't carry as plain a-z tokens.
