@@ -3,25 +3,6 @@
 // ===============================================================
 const MAX_CHECK_LEN = 2000000;
 const CAT_PRIORITY = { spelling:4, grammar:3, punctuation:2, confusable:1, style:0 };
-
-// ===============================================================
-// 8b. READABILITY
-//     Flesch weights syllables-per-word at 84.6, so the whole measure
-//     rests on the syllable count being right. The previous counter was
-//     a single vowel-group regex, which got a little under six words in
-//     ten correct — enough to move the published score by ten points or
-//     more on ordinary prose.
-//
-//     Sentence counting matters almost as much. Headings, bullets and
-//     list items rarely end in a full stop, so a document full of them
-//     reads as one enormous sentence. Readability therefore does its own
-//     splitting, breaking at line ends as well as at terminal
-//     punctuation; the grammar rules keep the sentence boundaries they
-//     have always had, because changing those would change their
-//     verdicts.
-// ===============================================================
-
-// Words the rules below get wrong, and common enough to be worth stating.
 const SYLLABLE_EXCEPTIONS = {
   // -ea and friends that the hiatus rules would over-split
   sea:1, tea:1, pea:1, plea:1, flea:1, yea:1, lea:1, quay:1,
