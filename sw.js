@@ -1,4 +1,5 @@
-const CACHE_NAME = "crockpot-v1.3.2";
+const VERSION = "1.3.1";
+const CACHE_NAME = "crockpot-1.3.1" + VERSION;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -21,10 +22,10 @@ const APP_SHELL = [
   "./icons/icon-512-maskable.png"
 ];
 
-function cachePrecacheList(cache) {
+function precache(cache) {
   return Promise.all(
     APP_SHELL.map((url) =>
-      cache.add(url).catch((err) => {
+      cache.add(new Request(url, { cache: "reload" })).catch((err) => {
         console.warn("Crockpot SW: could not precache", url, err);
       })
     )
@@ -34,37 +35,59 @@ function cachePrecacheList(cache) {
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cachePrecacheList(cache))
+      .then(precache)
       .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((names) =>
-      Promise.all(
-        names.filter((name) => name !== CACHE_NAME)
-             .map((name) => caches.delete(name))
+    caches.keys()
+      .then((names) =>
+        Promise.all(names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n)))
       )
-    ).then(() => self.clients.claim())
+      .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
+  const req = event.request;
+  if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
+
+  if (req.mode === "navigate") {
+    event.respondWith(
+      fetch(req, { cache: "no-cache" })
+        .then((res) => {
+          if (res && res.status === 200) {
+            const copy = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put("./index.html", copy));
+          }
+          return res;
+        })
+        .catch(() =>
+          caches.match(req).then((hit) => hit || caches.match("./index.html"))
+        )
+    );
+    return;
+  }
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const network = fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+    caches.match(req).then((cached) => {
+      const refresh = fetch(req)
+        .then((res) => {
+          if (res && res.status === 200) {
+            const copy = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(req, copy));
           }
-          return response;
+          return res;
         })
-        .catch(() => cached);
-      return cached || network;
+        .catch(() => cached || caches.match("./index.html"));
+
+      if (cached) {
+        event.waitUntil(refresh.catch(() => {}));
+        return cached;
+      }
+      return refresh;
     })
   );
 });
