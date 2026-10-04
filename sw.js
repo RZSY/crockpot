@@ -1,5 +1,5 @@
 const VERSION = "1.3.1";
-const CACHE_NAME = "crockpot-1.3.1" + VERSION;
+const CACHE_NAME = "crockpot-v" + VERSION;
 const APP_SHELL = [
   "./",
   "./index.html",
