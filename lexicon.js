@@ -180,7 +180,14 @@ function singularise(w){
   if(endsWith(w,"ies")) return w.slice(0,-3) + "y";
   if(endsWith(w,"ves")) return w.slice(0,-3) + "f";
   if(/(ches|shes|sses|xes|zes)$/.test(w)) return w.slice(0,-2);
-  if(endsWith(w,"oes")) return w.slice(0,-2);
+  if(endsWith(w,"oes")){
+    // Two different plurals collide in "-oes": "hero"+"es" (no singular e)
+    // and "shoe"+"s" (singular already ends in e). Prefer whichever
+    // reading is a real word, so "shoes" gives "shoe" and not "sho".
+    const keepE = w.slice(0,-1);
+    if(DICTIONARY.has(keepE)) return keepE;
+    return w.slice(0,-2);
+  }
   if(endsWith(w,"s")) return w.slice(0,-1);
   return w;
 }
