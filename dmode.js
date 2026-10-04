@@ -1,8 +1,4 @@
 // dmode — dark mode toggle for Crockpot
-// Persists choice in localStorage under "crockpot-theme" ("dark" | "light").
-// A tiny inline script in <head> already applies the saved/preferred theme
-// before first paint; this file just wires up the toggle button.
-
 (function () {
   var STORAGE_KEY = "crockpot-theme";
   var root = document.documentElement;
