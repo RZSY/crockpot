@@ -25,6 +25,43 @@ function startsWithVowelSound(word){
 }
 
 // --- wordiness and redundancy -------------------------------------------
+// --- reversing "-er"/"-est" back to the base adjective --------------------
+// Handles the three regular spelling changes so the doubled-comparative
+// check below isn't limited to a short hardcoded list: consonant doubling
+// (sad -> sadder), dropping a silent e (fine -> finer), and y -> i
+// (happy -> happier), on top of the plain suffix (fast -> faster). Every
+// candidate is checked against the real adjective list before being
+// accepted, so a coincidental "-er"/"-est" ending on an unrelated word
+// (offer, sober, modest) never produces a false match.
+function comparativeBaseCandidates(w, suffix){
+  const stripped = w.slice(0, -suffix.length);
+  const candidates = [stripped, stripped + "e"];
+  if(suffix === "er" && /ier$/.test(w)) candidates.push(w.slice(0,-3)+"y");
+  if(suffix === "est" && /iest$/.test(w)) candidates.push(w.slice(0,-4)+"y");
+  if(stripped.length > 2 && stripped[stripped.length-1] === stripped[stripped.length-2]){
+    candidates.push(stripped.slice(0,-1));
+  }
+  return candidates;
+}
+function baseOfComparative(w){
+  if(!/er$/.test(w) || w.length < 4) return undefined;
+  return comparativeBaseCandidates(w,"er").find(c =>
+    c.length > 2 && (COMMON_ADJECTIVES.has(c) || (DICTIONARY.has(c) && isAdjective(c))));
+}
+function baseOfSuperlative(w){
+  if(!/est$/.test(w) || w.length < 5) return undefined;
+  return comparativeBaseCandidates(w,"est").find(c =>
+    c.length > 2 && (COMMON_ADJECTIVES.has(c) || (DICTIONARY.has(c) && isAdjective(c))));
+}
+// --- irregular-plural and person-noun data for the rules further down ----
+const IRREGULAR_PLURAL_MISTAKES = {
+  mans:"men", mouses:"mice", gooses:"geese", foots:"feet", deers:"deer",
+  tooths:"teeth", oxes:"oxen", fishs:"fish", sheeps:"sheep", cactuses:"cacti"
+};
+const PERSON_NOUNS = S("person people man men woman women boy boys girl girls child children kid kids baby babies student students teacher teachers friend friends driver drivers doctor doctors nurse nurses worker workers employee employees customer customers player players member members colleague colleagues neighbour neighbours neighbor neighbors parent parents mother mothers father fathers brother brothers sister sisters son sons daughter daughters manager managers officer officers scientist scientists artist artists author authors writer writers engineer engineers lawyer lawyers farmer farmers soldier soldiers king queen kings queens");
+const SUBJ_PRONOUNS_FOR_WHAT = S("i you he she it we they");
+
+// --- wordiness and redundancy -------------------------------------------
 const WORDY_PHRASES = [
   ["in order to","to"],["due to the fact that","because"],["owing to the fact that","because"],
   ["in spite of the fact that","although"],["despite the fact that","although"],
@@ -174,6 +211,9 @@ function grammarIssues(text, tokens, sentences, add){
   // Walk from a determiner past any numbers and adjectives to the noun the
   // phrase is actually about: "those two long meetings" -> "meetings".
   const NUMBER_WORDS = S("one two three four five six seven eight nine ten eleven twelve twenty thirty forty fifty hundred thousand million billion first second third last next other same only very such more less");
+  // Sentence-openers that are neither a pronoun nor a determiner but are
+  // also not a fresh noun subject, for the bare-subject check further down.
+  const INTERJECTIONS = S("yes yeah yep nope well please okay ok hey oh ah wow alright hi hello thanks cheers right so now");
   const QUANTIFIER_HEADS = S("rest remainder half number couple lot bunch handful none all some any most few several plenty variety range series percentage proportion minority majority dozen pair set group total sort kind type");
   function headNounAfter(i){
     let j = i+1, guard = 0;
@@ -184,7 +224,8 @@ function grammarIssues(text, tokens, sentences, add){
     if(!DICTIONARY.has(h)) return -1;
     if(PRONOUNS.has(h) || PREPOSITIONS.has(h) || MODALS.has(h) || CONJUNCTIONS.has(h) ||
        BE_FORMS.has(h) || HAVE_FORMS.has(h) || DO_FORMS.has(h) || DETERMINERS.has(h) ||
-       QUANTIFIER_HEADS.has(h) || COLLECTIVE.has(h) || INVARIANT_PLURALS.has(h)) return -1;
+       QUANTIFIER_HEADS.has(h) || COLLECTIVE.has(h) || INVARIANT_PLURALS.has(h) ||
+       h.indexOf("'") !== -1) return -1; // a contraction ("don't", "isn't") is never the subject noun
     return j;
   }
   function headIsPlural(j){ return isPluralNoun(lw(j)); }
@@ -234,9 +275,24 @@ function grammarIssues(text, tokens, sentences, add){
           title:"Article with a plural noun",
           why:'"'+w+'" introduces a single thing, so it can\'t sit in front of the plural "'+raw(i+1)+'".' });
       }
+      // "an advice" / "a progress" — mass nouns aren't counted one at a
+      // time, so they never take "a"/"an" in the first place.
+      if(h === i+1 && UNCOUNTABLE.has(lw(h))){
+        add({ cat:"grammar", rule:"art-uncountable", severity:"critical", ...span(i,i+1),
+          suggestions:[raw(i+1), "some "+lw(i+1)], title:"Article with an uncountable noun",
+          why:'"'+raw(h)+'" isn\'t counted one at a time, so it takes no article — or "some" — rather than "'+w+'".' });
+      }
+    }
+    // "many"/"several"/"fewer" + an uncountable noun — these count things
+    // one by one, which is exactly what a mass noun can't be done to.
+    if((w === "many" || w === "several" || w === "fewer") && next && UNCOUNTABLE.has(w1) && !isAdjective(w1)){
+      const fix = { many:"much", several:"some", fewer:"less" }[w];
+      add({ cat:"grammar", rule:"quant-uncountable", severity:"critical", ...span(i,i),
+        suggestions:[sub(i,fix)], title:'"'+w+'" doesn\'t fit an uncountable noun',
+        why:'"'+raw(i+1)+'" isn\'t counted one by one, so this wants "'+fix+'" rather than "'+w+'".' });
     }
     // this/that + plural, these/those + singular
-    if(w === "this" || w === "that" || w === "these" || w === "those" || w === "every" || w === "each"){
+    if(w === "this" || w === "that" || w === "these" || w === "those" || w === "every" || w === "each" || w === "both"){
       const h = headNounAfter(i);
       // "this works fine" is a verb; "this books are mine" is a noun — what
       // follows tells them apart.
@@ -254,8 +310,42 @@ function grammarIssues(text, tokens, sentences, add){
           add({ cat:"grammar", rule:"det-number", severity:"critical", ...span(h,h),
             suggestions:[sub(h, singularise(lw(h)))], title:'"'+w+'" takes a singular noun',
             why:'"'+w+'" picks out members one at a time, so the noun after it stays singular.' });
+        } else if(w === "both" && !plural && !UNCOUNTABLE.has(lw(h)) && !isIngForm(lw(h)) && !/^[A-Z]/.test(raw(h))){
+          add({ cat:"grammar", rule:"det-number", severity:"critical", ...span(h,h),
+            suggestions:[sub(h, pluralise(lw(h)))], title:'"Both" takes a plural noun',
+            why:'"Both" refers to two things, so the noun after it is plural: "'+pluralise(lw(h))+'".' });
         }
       }
+    }
+    // A handful of irregular plurals (man/goose/mouse/foot/deer...) also
+    // happen to be real dictionary words in some other role — "mans" and
+    // "foots" as rare verbs, "deers" as a stray variant — so the spellchecker
+    // never flags them. Only treat one as the wrong plural when a word that
+    // calls for a plural noun sits right in front of it.
+    if(IRREGULAR_PLURAL_MISTAKES[w1] && next &&
+       (NUMBER_WORDS.has(w) || S("many few several both these those two three four five six seven eight nine ten").has(w))){
+      add({ cat:"grammar", rule:"irregular-plural", severity:"critical", ...span(i+1,i+1),
+        suggestions:[sub(i+1, IRREGULAR_PLURAL_MISTAKES[w1])], title:"Irregular plural",
+        why:'The plural of "'+singularise(w1)+'" is "'+IRREGULAR_PLURAL_MISTAKES[w1]+'", not "'+w1+'".' });
+    }
+    // "which"/"what" used where English wants "who"/"that" — "which" never
+    // takes a person as its antecedent, and "what" doesn't introduce a
+    // relative clause in Standard English ("the thing what I need").
+    if(w1 === "which" && next && PERSON_NOUNS.has(w)){
+      add({ cat:"grammar", rule:"rel-pronoun", severity:"critical", ...span(i+1,i+1),
+        suggestions:[sub(i+1,"who")], title:'"Which" doesn\'t refer to people',
+        why:'"'+raw(i)+'" is a person, so the relative clause needs "who" rather than "which".' });
+    } else if(w1 === "what" && next && i+2 < n && SUBJ_PRONOUNS_FOR_WHAT.has(lw(i+2)) &&
+              contig(i+1) && S("thing things stuff one item object").has(w)){
+      // Deliberately a small, explicit noun list rather than the general
+      // isNounish() check: "what" after a genuine noun ("the thing what I
+      // need") is the nonstandard pattern, but isNounish() also accepts
+      // inflected verb forms it doesn't specifically recognise (e.g.
+      // "knows"), and "she knows what she wants" is an ordinary, correct
+      // embedded question that must never be touched.
+      add({ cat:"grammar", rule:"rel-pronoun", severity:"critical", ...span(i+1,i+1),
+        suggestions:[sub(i+1,"that")], title:'"What" doesn\'t introduce a relative clause',
+        why:'Standard English uses "that" (or nothing) here, not "what", to say more about "'+raw(i)+'".' });
     }
     // fewer/less, number/amount, many/much
     if(w === "less" && next && (()=>{ const h = headNounAfter(i); return h > 0 && headIsPlural(h) && !UNCOUNTABLE.has(singularise(lw(h))); })()){
@@ -344,8 +434,54 @@ function grammarIssues(text, tokens, sentences, add){
         }
       }
     }
-    // there is/are
-    if(w === "there" && next && (w1 === "is" || w1 === "was" || w1 === "'s")){
+    // ---------------------------------------------------------------
+    // BARE SUBJECT AT THE START OF A SENTENCE — a name ("Sarah has..."),
+    // or a plural/mass noun used generically ("Dogs bark", "Coffee helps").
+    // Restricted to sentence-initial position: with no determiner to lean
+    // on, a noun spotted mid-sentence is far more likely to be an object,
+    // or the tail of a longer phrase, than a fresh subject — exactly the
+    // ambiguity a determiner or "both of X" resolves for the rules above.
+    if(sentStart(i) && next && !PRONOUNS.has(w) && !DETERMINERS.has(w) &&
+       !PREPOSITIONS.has(w) && !CONJUNCTIONS.has(w) && !MODALS.has(w) &&
+       !BE_FORMS.has(w) && !HAVE_FORMS.has(w) && !DO_FORMS.has(w) &&
+       !INTERJECTIONS.has(w) && w.indexOf("'") === -1){
+      const capitalName = /^[A-Z]/.test(raw(i)) && !DICTIONARY.has(w);
+      const bareNoun = !capitalName && isNounish(w) && !COLLECTIVE.has(w) && !isAdjective(w);
+      if(capitalName || bareNoun){
+        const plural = bareNoun && isPluralNoun(w) && !UNCOUNTABLE.has(w);
+        const vb = w1;
+        if(!plural){
+          const fix = { are:"is", were:"was", have:"has", do:"does" }[vb];
+          if(fix){
+            add({ cat:"grammar", rule:"sv-agree", severity:"critical", ...span(i+1,i+1),
+              suggestions:[sub(i+1, fix)], title:"Subject and verb don't agree",
+              why:'"'+raw(i)+'" is singular, so it takes "'+fix+'".' });
+          } else if(isBaseVerb(vb) && !MODALS.has(vb) && !BE_FORMS.has(vb) && !HAVE_FORMS.has(vb) &&
+                    !DO_FORMS.has(vb) && !isPluralNoun(vb) && vb !== "need" &&
+                    !PREPOSITIONS.has(vb) && !isNounish(vb)){
+            add({ cat:"grammar", rule:"sv-agree-s", severity:"critical", ...span(i+1,i+1),
+              suggestions:[sub(i+1, thirdPerson(vb))], title:"Verb needs a third-person ending",
+              why:'"'+raw(i)+'" is singular, so the verb takes -s: "'+thirdPerson(vb)+'".' });
+          }
+        } else {
+          const fix = { is:"are", was:"were", has:"have", does:"do" }[vb];
+          if(fix){
+            add({ cat:"grammar", rule:"sv-agree", severity:"critical", ...span(i+1,i+1),
+              suggestions:[sub(i+1, fix)], title:"Subject and verb don't agree",
+              why:'"'+raw(i)+'" is plural, so it takes "'+fix+'".' });
+          } else if(looksLikeVerbS(vb) && !BE_FORMS.has(vb) && !HAVE_FORMS.has(vb) && !DO_FORMS.has(vb)){
+            const base = baseOfThird(vb);
+            if(ALL_BASE_VERBS.has(base)){
+              add({ cat:"grammar", rule:"sv-agree-s", severity:"critical", ...span(i+1,i+1),
+                suggestions:[sub(i+1, base)], title:"Verb shouldn't take -s here",
+                why:'"'+raw(i)+'" is plural, so the verb stays as "'+base+'".' });
+            }
+          }
+        }
+      }
+    }
+    // there/here is/are
+    if((w === "there" || w === "here") && next && (w1 === "is" || w1 === "was" || w1 === "'s")){
       let j = i+2, guard = 0;
       while(j < n && guard < 4 && (DETERMINERS.has(lw(j)) === false && isAdjective(lw(j)))){ j++; guard++; }
       const head = lw(j);
@@ -353,8 +489,8 @@ function grammarIssues(text, tokens, sentences, add){
       if((quantPlural.has(lw(i+2)) || quantPlural.has(head)) ||
          (isPluralNoun(head) && isNounish(head) && !UNCOUNTABLE.has(singularise(head)))){
         add({ cat:"grammar", rule:"there-agree", severity:"critical", ...span(i+1,i+1),
-          suggestions:[sub(i+1, w1 === "was" ? "were" : "are")], title:'"There" agrees with what follows it',
-          why:'What follows is plural, so it takes "there '+(w1==="was"?"were":"are")+'".' });
+          suggestions:[sub(i+1, w1 === "was" ? "were" : "are")], title:'"'+raw(i)+'" agrees with what follows it',
+          why:'What follows is plural, so it takes "'+lw(i)+' '+(w1==="was"?"were":"are")+'".' });
       }
     }
     // "one of the reports is" vs "three of the reports are".
@@ -432,17 +568,30 @@ function grammarIssues(text, tokens, sentences, add){
         suggestions:[sub(i+1, w1 === "were" ? "was" : "is")], title:'"There" agrees with what follows it',
         why:'"'+raw(i+2)+'" introduces a single thing, so it takes "there '+(w1==="were"?"was":"is")+'".' });
     }
-    // determiner + plural noun + is/was  ("the dogs is barking")
+    // determiner + plural noun + verb  ("the dogs is barking", "the dogs runs")
     // A noun sitting inside a prepositional phrase is never the subject, so
     // "each of the students has" and "a box of chocolates is" are left alone.
     if(DETERMINERS.has(w) && w !== "this" && w !== "that" && next && !inPrepPhrase(i)){
       const h = headNounAfter(i);
       if(h > 0 && contig(h) && headIsPlural(h) && !UNCOUNTABLE.has(lw(h)) && !S_ENDING_SINGULAR.has(lw(h))){
-        const fix = { is:"are", was:"were", has:"have" }[lw(h+1)];
+        const vb = lw(h+1);
+        const fix = { is:"are", was:"were", has:"have", does:"do" }[vb];
         if(fix){
           add({ cat:"grammar", rule:"sv-agree", severity:"critical", ...span(h+1,h+1),
             suggestions:[sub(h+1, fix)], title:"Subject and verb don't agree",
             why:'"'+raw(h)+'" is plural, so it takes "'+fix+'".' });
+        } else if(sentStart(i) && looksLikeVerbS(vb) && !BE_FORMS.has(vb) && !HAVE_FORMS.has(vb) && !DO_FORMS.has(vb)){
+          // an ordinary lexical verb wrongly carrying the -s that only a
+          // singular subject takes ("the dogs runs"). Restricted to a
+          // clause-opening noun phrase: past the first few words, a
+          // determiner phrase is at least as likely to be an object as a
+          // subject, and the word after it then need not be a verb at all.
+          const base = baseOfThird(vb);
+          if(ALL_BASE_VERBS.has(base)){
+            add({ cat:"grammar", rule:"sv-agree-s", severity:"critical", ...span(h+1,h+1),
+              suggestions:[sub(h+1, base)], title:"Verb shouldn't take -s here",
+              why:'"'+raw(h)+'" is plural, so the verb stays as "'+base+'".' });
+          }
         }
       }
     }
@@ -473,17 +622,39 @@ function grammarIssues(text, tokens, sentences, add){
           why:'You would say "'+subjectForm+' '+(subjectForm==="I"?"was":"was")+' working", not "'+w+' was working". The other person is named first by convention.' });
       }
     }
-    // singular noun + are/were  ("the dog are barking") — collectives exempt,
-    // because British English happily says "the team are winning".
-    if(S("the a an this that my our his her their each every one").has(w) && next){
+    // singular noun (including an uncountable one — mass nouns are
+    // grammatically singular too: "the traffic was bad") + a verb that only
+    // agrees with a plural subject. Collectives are exempt, because British
+    // English happily says "the team are winning".
+    if(S("the a an this that my our his her their each every one both").has(w) && next){
       const h = headNounAfter(i);
-      if(h > 0 && contig(h) && !headIsPlural(h) && !UNCOUNTABLE.has(lw(h)) &&
-         (lw(h+1) === "are" || lw(h+1) === "were") && lw(h+2) !== "and" &&
-         !(h+2 < n && lw(h+2) === "of")){
-        const fix = lw(h+1) === "are" ? "is" : "was";
-        add({ cat:"grammar", rule:"sv-agree", severity:"critical", ...span(h+1,h+1),
-          suggestions:[sub(h+1, fix)], title:"Subject and verb don't agree",
-          why:'"'+raw(h)+'" is singular, so it takes "'+fix+'".' });
+      if(h > 0 && contig(h) && !headIsPlural(h) &&
+         lw(h+2) !== "and" && !(h+2 < n && lw(h+2) === "of")){
+        const vb = lw(h+1);
+        const fix = { are:"is", were:"was", have:"has", do:"does" }[vb];
+        // A noun phrase embedded straight after a preposition ("students
+        // in the classroom have...") is a modifier, not the subject, so
+        // the word right after it need not be its verb at all — unless the
+        // noun is uncountable, in which case it takes a singular verb
+        // wherever it sits ("none of the information was..."), so the fix
+        // holds regardless of what the real subject turns out to be.
+        if(fix && (!inPrepPhrase(i) || UNCOUNTABLE.has(lw(h)))){
+          add({ cat:"grammar", rule:"sv-agree", severity:"critical", ...span(h+1,h+1),
+            suggestions:[sub(h+1, fix)], title:"Subject and verb don't agree",
+            why:'"'+raw(h)+'" is singular, so it takes "'+fix+'".' });
+        } else if(sentStart(i) && !inPrepPhrase(i) && isBaseVerb(vb) && !MODALS.has(vb) && !BE_FORMS.has(vb) && !HAVE_FORMS.has(vb) &&
+                  !DO_FORMS.has(vb) && !isPluralNoun(vb) && vb !== "need" &&
+                  !PREPOSITIONS.has(vb) && !isNounish(vb)){
+          // an ordinary lexical verb left bare when the singular subject
+          // needs the third-person -s ("the dog run fast"). Restricted to
+          // a clause-opening, non-embedded noun phrase for the same reason
+          // as above, plus: skip a noun phrase that is itself the object of
+          // "of" ("one of my friend"), where the word after it answers to
+          // the quantifier before "of", not to this noun.
+          add({ cat:"grammar", rule:"sv-agree-s", severity:"critical", ...span(h+1,h+1),
+            suggestions:[sub(h+1, thirdPerson(vb))], title:"Verb needs a third-person ending",
+            why:'"'+raw(h)+'" is singular, so the verb takes -s: "'+thirdPerson(vb)+'".' });
+        }
       }
     }
 
@@ -570,9 +741,9 @@ function grammarIssues(text, tokens, sentences, add){
         why:'For a past habit the form is "used to".' });
     }
     // double comparative / superlative
+    const IRREGULAR_COMPARATIVES = S("better best worse worst further furthest");
     if((w === "more" || w === "most") && next &&
-       ((/er$/.test(w1) && COMMON_ADJECTIVES.has(w1.replace(/ier$/,"y").replace(/er$/,""))) ||
-        S("better best worse worst easier easiest bigger biggest older oldest faster fastest happier happiest").has(w1))){
+       (baseOfComparative(w1) || IRREGULAR_COMPARATIVES.has(w1))){
       add({ cat:"grammar", rule:"double-comparative", severity:"critical", ...span(i,i+1),
         suggestions:[raw(i+1)], title:"Doubled comparison",
         why:'"'+raw(i+1)+'" already carries the comparison, so "'+w+'" is one step too many.' });
@@ -1233,8 +1404,9 @@ function grammarIssues(text, tokens, sentences, add){
     // ---------------------------------------------------------------
     // DOUBLE SUPERLATIVE
     // ---------------------------------------------------------------
-    if((w === "most" || w === "more") && next && /(est)$/.test(w1) && DICTIONARY.has(w1) &&
-       isAdjective(w1.replace(/est$/,"")) ){
+    const IRREGULAR_SUPERLATIVES = S("best worst furthest");
+    if((w === "most" || w === "more") && next &&
+       (baseOfSuperlative(w1) || IRREGULAR_SUPERLATIVES.has(w1))){
       add({ cat:"grammar", rule:"double-superlative", severity:"critical", ...span(i,i+1),
         suggestions:[raw(i+1)], title:"Doubled comparison",
         why:'"'+raw(i+1)+'" is already the -est form, so it does not also need "'+raw(i)+'".' });
