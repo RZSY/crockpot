@@ -343,7 +343,18 @@ function analyze(rawText, options){
     const stem = lw.replace(/['\u2019]s$/,"");
     const res = suggestFor(stem);
     const midSentence = t.i > 0;
-    const looksProper = /^[A-Z]/.test(t.raw) && midSentence;
+    // At the very start of a sentence, capitalisation is compulsory whatever
+    // the word is, so on its own it says nothing about whether this is a
+    // name. It still behaves like one, though, whenever the only fix on
+    // offer comes from a deliberate, curated table (a known misspelling or
+    // a texting form) rather than a generic edit-distance guess — those
+    // stay reliable regardless of where the word sits, so a sentence-
+    // opening "Teh" is still corrected to "The" rather than waved through
+    // as a possible name. Absent that, a capitalised word the dictionary
+    // has never heard of is exactly as likely to be a name at the start of
+    // a sentence as in the middle of one.
+    const curatedFix = !midSentence && (informalExpansion(lw) || misspellingLookup(lw));
+    const looksProper = /^[A-Z]/.test(t.raw) && (midSentence || !curatedFix);
     if(looksProper){
       // Treat it as a name, silently, when it behaves like one: part of a
       // capitalised run ("Daniel Okonjo"), after a title ("Ms Whitfield"),
