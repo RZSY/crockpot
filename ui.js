@@ -102,7 +102,7 @@ btnUndo.addEventListener("click", () => {
   btnUndo.disabled = history.length === 0;
   activeKey = null;
   render();
-  editor.focus();
+  editor.focus({ preventScroll: true });
 });
 
 function escapeHtml(s){
@@ -147,7 +147,52 @@ function describeEase(ease){
   return "very hard";
 }
 
+// The editor grows with its text instead of scrolling inside a fixed box, so the
+// page does the scrolling and the highlight layer (which fills the same wrapper)
+// always lines up with the words underneath it.
+const editorWrap = editor.parentElement;
+function autosizeEditor(){
+  // hold the wrapper at its current height while the textarea is re-measured,
+  // so the page never collapses for a moment and jumps the reader's scroll position
+  editorWrap.style.minHeight = editorWrap.offsetHeight + "px";
+  editor.style.height = "auto";
+  editor.style.height = editor.scrollHeight + "px";
+  editorWrap.style.minHeight = "";
+}
+
+// The margin-notes list follows the editor's height: as the text grows, the
+// notes panel grows with it (and scrolls inside itself only once it has more
+// notes than that height can show). 560px is the floor, so short documents
+// look exactly as they always did.
+const leftCard  = editorWrap.closest(".card");
+const rightCard = notesEl.closest(".card");
+const legendEl  = rightCard && rightCard.querySelector(".legend");
+const NOTES_MIN = 560;
+const narrowMQ  = window.matchMedia ? window.matchMedia("(max-width: 900px)") : null;
+function syncNotesHeight(){
+  if(!leftCard || !rightCard) return;
+  // single-column layout: the two cards are stacked, so there is nothing to match
+  if(narrowMQ && narrowMQ.matches){ notesEl.style.maxHeight = ""; return; }
+  const n = notesEl.getBoundingClientRect();
+  const above = n.top - rightCard.getBoundingClientRect().top;                    // heading, score, filters
+  const below = (legendEl ? legendEl.getBoundingClientRect().bottom : n.bottom) - n.bottom +
+                (parseFloat(getComputedStyle(rightCard).paddingBottom) || 0);     // legend + padding
+  // measured from the parts around the list, never from the list itself, so
+  // this settles on one value instead of chasing its own tail
+  const v = Math.max(NOTES_MIN, Math.round(leftCard.offsetHeight - above - below)) + "px";
+  if(notesEl.style.maxHeight !== v) notesEl.style.maxHeight = v;
+}
+if(typeof ResizeObserver !== "undefined"){
+  const ro = new ResizeObserver(() => requestAnimationFrame(syncNotesHeight));
+  if(leftCard) ro.observe(leftCard);
+  if(rightCard) ro.observe(rightCard);
+} else {
+  window.addEventListener("resize", syncNotesHeight);
+}
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(syncNotesHeight);
+
 function render(){
+  autosizeEditor();
   const text = editor.value;
   const result = analyze(text, { userDictionary,
                                  flagConfusables: toggleConf.checked,
@@ -341,10 +386,10 @@ function buildCard(issue){
 
   const focusIssue = () => {
     activeKey = issue.key;
-    editor.focus();
+    editor.focus({ preventScroll: true });
     editor.setSelectionRange(issue.start, issue.end);
-    scrollEditorTo(issue.start);
     render();
+    scrollEditorTo(issue.start);
   };
   note.addEventListener("click", focusIssue);
   note.addEventListener("keydown", e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); focusIssue(); } });
@@ -352,12 +397,20 @@ function buildCard(issue){
 }
 
 function scrollEditorTo(pos){
-  // approximate: count the lines before the issue and scroll there
-  const before = editor.value.slice(0, pos).split("\n").length - 1;
-  const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 30;
-  const target = before * lineHeight - editor.clientHeight / 2;
-  editor.scrollTop = Math.max(0, target);
-  backdrop.scrollTop = editor.scrollTop;
+  // The editor no longer scrolls inside itself, so scroll the page. Prefer the
+  // highlighted span for the active note (exact, wrapping included); fall back
+  // to counting lines before the issue.
+  const span = highlights.querySelector(".hl-active");
+  let top;
+  if(span){
+    top = span.getBoundingClientRect().top;
+  } else {
+    const before = editor.value.slice(0, pos).split("\n").length - 1;
+    const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 30;
+    top = editor.getBoundingClientRect().top + before * lineHeight;
+  }
+  const target = window.scrollY + top - window.innerHeight / 2;
+  window.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
 }
 
 function applyFix(issue, suggestion){
@@ -388,7 +441,7 @@ function applyBatch(filter){
   editor.value = val;
   activeKey = null;
   render();
-  editor.focus();
+  editor.focus({ preventScroll: true });
 }
 
 // Every spelling correction the checker is willing to name, including the
@@ -407,8 +460,22 @@ btnFixSpelling.addEventListener("click", () => applyBatch(isSpellingFix));
 
 editor.addEventListener("scroll", () => { backdrop.scrollTop = editor.scrollTop; backdrop.scrollLeft = editor.scrollLeft; });
 
+// re-measure when the available width changes (window resize, rotation, layout
+// switch), since that changes where lines wrap; width only, so it cannot loop
+let lastEditorWidth = editorWrap.clientWidth;
+function onEditorWidthChange(){
+  if(editorWrap.clientWidth === lastEditorWidth) return;
+  lastEditorWidth = editorWrap.clientWidth;
+  autosizeEditor();
+}
+if(typeof ResizeObserver !== "undefined") new ResizeObserver(onEditorWidthChange).observe(editorWrap);
+else window.addEventListener("resize", onEditorWidthChange);
+// web fonts arriving late change line widths too
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(autosizeEditor);
+
 let debounceTimer = null;
 editor.addEventListener("input", () => {
+  autosizeEditor();
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(render, 220);
 });
@@ -447,4 +514,4 @@ document.getElementById("btnExample").addEventListener("click", () => {
 });
 
 render();
-
+syncNotesHeight();
