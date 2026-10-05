@@ -1,5 +1,5 @@
-const VERSION = "1.3.1";
-const CACHE_NAME = "crockpot-v" + VERSION;
+const VERSION = "1.4.0";
+const CACHE_NAME = "crockpot-" + VERSION;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -11,6 +11,8 @@ const APP_SHELL = [
   "./tokenizer.js",
   "./confusables.js",
   "./grammar-rules.js",
+  "./esl-rules.js",
+  "./parser.js",
   "./punctuation.js",
   "./document-analysis.js",
   "./ui.js",
