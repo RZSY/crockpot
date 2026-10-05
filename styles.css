@@ -87,6 +87,8 @@
   .editor-wrap:focus-within{ box-shadow: -14px 0 0 -13px var(--ink); }
 
   .grid{ display:grid; grid-template-columns: 1.55fr 1fr; gap: 2px; align-items:start; background: var(--ink); }
+  /* the notes card stretches to the full row, so it is never shorter than the editor beside it */
+  .grid > .card:last-child{ align-self: stretch; }
   @media (max-width: 900px){
     .grid{ grid-template-columns: 1fr; }
     .wrap{ padding: 0 18px 40px; }
@@ -153,11 +155,12 @@
     position: relative;
     width:100%;
     min-height: 420px;
-    resize: vertical;
+    resize: none;            /* height follows the text (see autosizeEditor in ui.js) */
     background: transparent;
     color: var(--ink);
     display:block;
-    overflow-y: auto;
+    overflow-y: hidden;      /* no inner scrollbar: it would narrow the textarea and
+                                make its lines wrap differently from the highlight layer */
   }
   textarea#editor::placeholder{ color: #9c9788; }
 
