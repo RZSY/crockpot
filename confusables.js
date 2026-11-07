@@ -71,5 +71,5 @@ HOMOPHONE_GROUPS.forEach(group=>group.forEach(w=>{ HOMOPHONE_MAP[w] = group.filt
 // Pairs whose distinction is genuinely context-dependent and which the
 // contextual rules below already handle — so the advisory pass stays quiet
 // about them rather than nagging on every occurrence.
-const HANDLED_CONTEXTUALLY = S("there their they're your you're its it's then than to too two lose loose affect effect whose who's were we're where que");
+const HANDLED_CONTEXTUALLY = S("there their they're your you're its it's then than to too two lose loose affect effect whose who's were we're where que waist waste knew new weak week brake break peace piece right write tale tail breath breathe hole whole son sun meat meet sea see quiet quite sale sail here hear advice advise through threw by buy weather whether board bored know no");
 

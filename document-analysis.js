@@ -71,9 +71,17 @@ function vowelGroups(s){
   return m ? m.length : 0;
 }
 
+const SYLLABLE_CACHE = new Map();
 function countSyllables(word){
   let w = String(word).toLowerCase().replace(/[^a-z]/g, "");
   if(!w) return 0;
+  const cached = SYLLABLE_CACHE.get(w);
+  if(cached !== undefined) return cached;
+  const res = _computeSyllables(w);
+  if(SYLLABLE_CACHE.size < 10000) SYLLABLE_CACHE.set(w, res);
+  return res;
+}
+function _computeSyllables(w){
   if(SYLLABLE_EXCEPTIONS[w] != null) return SYLLABLE_EXCEPTIONS[w];
 
   // an inflected form of a word that is in the table
@@ -147,10 +155,11 @@ function readabilitySentenceCount(text, units){
   const boundary = /([.!?]+)(["'\u201d\u2019)\]]*)(\s|$)/g;
   let m;
   while((m = boundary.exec(text))){
-    const before = text.slice(0, m.index);
+    const lookback = Math.max(0, m.index - 20);
+    const before = text.slice(lookback, m.index);
     const lastWord = (before.match(/([A-Za-z]+)$/) || [])[1];
     if(lastWord && ABBREVIATIONS.has(lastWord.toLowerCase()) && m[1] === ".") continue;
-    if(lastWord && lastWord.length === 1 && m[1] === ".") continue;
+    if(lastWord && lastWord.length === 1 && lastWord === lastWord.toUpperCase() && m[1] === ".") continue;
     cuts.push(m.index + m[1].length + m[2].length);
   }
   const lineEnd = /\n+/g;
@@ -226,7 +235,23 @@ function analyze(rawText, options){
   const NON_PROSE = /(https?:\/\/\S+|www\.\S+|[\w.+-]+@[\w-]+\.[\w.]+|\b[\w-]+\.(?:com|org|net|io|gov|edu|uk|dev|app|co)\b|`[^`]*`|\/[\w.\/-]{3,})/gi;
   let nm;
   while((nm = NON_PROSE.exec(text))) skipRanges.push([nm.index, nm.index + nm[0].length]);
-  const inSkipRange = (a,b) => skipRanges.some(r => a < r[1] && b > r[0]);
+  const inSkipRange = (a,b) => {
+    const len = skipRanges.length;
+    if(len === 0) return false;
+    if(len <= 8){
+      for(let i=0; i<len; i++) if(a < skipRanges[i][1] && b > skipRanges[i][0]) return true;
+      return false;
+    }
+    let low = 0, high = len - 1;
+    while(low <= high){
+      const mid = (low + high) >> 1;
+      const r = skipRanges[mid];
+      if(a < r[1] && b > r[0]) return true;
+      if(b <= r[0]) high = mid - 1;
+      else low = mid + 1;
+    }
+    return false;
+  };
 
   // Tokens mixing letters and digits ("b4", "l8r", "gr8", "2day") never reach
   // the tokeniser, which matches letters only so the grammar rules are not fed
@@ -394,9 +419,20 @@ function analyze(rawText, options){
   const grammarSink = (iss) => {
     if(inSkipRange(iss.start, iss.end)) return;
     // don't build grammar advice on top of a word we already know is misspelled
-    for(const idx of misspelledAt){
-      const t = tokens[idx];
-      if(t.start < iss.end && t.end > iss.start && iss.cat === "grammar") return;
+    if(misspelledAt.size > 0 && iss.cat === "grammar"){
+      let low = 0, high = tokens.length - 1, first = tokens.length;
+      while(low <= high){
+        const mid = (low + high) >> 1;
+        if(tokens[mid].end > iss.start){
+          first = mid;
+          high = mid - 1;
+        } else {
+          low = mid + 1;
+        }
+      }
+      for(let k = first; k < tokens.length && tokens[k].start < iss.end; k++){
+        if(misspelledAt.has(k)) return;
+      }
     }
     add(iss);
   };

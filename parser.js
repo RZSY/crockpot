@@ -100,7 +100,7 @@ const PARSER = (() => {
     grisly measly sprightly courtly cleanly fortnightly
   `);
   // Adjectives that are idiomatic after a verb, so they are not "wrong": "play dirty", "think big".
-  const IDIOM_ADJ = S("dirty rough safe sure simple tough easy cool big small positive young tall quiet still calm firm thin thick true square");
+  const IDIOM_ADJ = S("dirty rough safe sure simple tough easy cool big small positive young tall quiet still calm firm thin thick true square red green blue black white yellow orange brown purple pink grey gray weather");
 
   // ---- manner verbs: how the action is done, so an adverb belongs after them ---------
   // Deliberately omits verbs that take an adjective ("stay calm", "turn red", "go quiet",
@@ -143,7 +143,7 @@ const PARSER = (() => {
   // Noun-only irregular plurals. Verb-ambiguous ones ("bases", "analyses") are deliberately left out.
   const IRREGULAR_PLURAL = S("people children men women feet teeth mice geese police cattle oxen criteria phenomena alumni fungi cacti nuclei stimuli radii indices matrices theses crises hypotheses appendices bacteria");
   const SINGULAR_IN_S    = S("news series species mathematics physics economics politics athletics gymnastics linguistics bus gas class glass boss business process address success access focus");
-  const VAGUE_NUMBER     = S("data staff team committee government family group media number couple lot majority minority variety range set pair bunch percent percentage rest half none any all most some");
+  const VAGUE_NUMBER     = S("data staff team committee government family group media number couple lot majority minority variety range set pair bunch percent percentage rest half none any all most some fish deer sheep salmon trout aircraft");
   const PLURAL_DET       = S("these those many few several both");
   const SINGULAR_DET     = S("this that each every another");
   const AUX_FIX = {            // singular form <-> plural form
@@ -272,7 +272,7 @@ const PARSER = (() => {
     if(/ly$/.test(w) && w.length > 4 && !/(family|italy|supply|reply|apply|rely|july|assembly|anomaly)$/.test(w)) return tagged(["ADV"], "suffix");
     if(/ing$/.test(w) && w.length > 4) return tagged(["VBG", "NN"], "suffix");
     if(/ed$/.test(w) && w.length > 3) return tagged(["VBD", "VBN", "ADJ"], "suffix");
-    if(/(tion|sion|ment|ness|ity|ance|ence|ship|ism|hood)s?$/.test(w)) return tagged(/s$/.test(w) ? ["NNS"] : ["NN"], "suffix");
+    if(/(tion|sion|ment|ness|ity|ance|ence|ship|ism|hood)s?$/.test(w)) return tagged(/(tions|sions|ments|nesses|ities|ances|ences|ships|isms|hoods)$/.test(w) ? ["NNS"] : ["NN"], "suffix");
     if(/(ous|ful|ive|able|ible|less|ical)$/.test(w)) return tagged(["ADJ"], "suffix");
     if(/s$/.test(w) && !/(ss|us|is)$/.test(w) && !has(SINGULAR_IN_S, w)) return tagged(["NNS", "VBZ"], "suffix");
     if(inf && inf.classes.length) return tagged(inf.classes.slice(), "dictionary evidence");

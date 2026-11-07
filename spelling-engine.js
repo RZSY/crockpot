@@ -62,16 +62,35 @@ function knownEdits2(word){
   }
   return pool;
 }
+let _dlBuf = new Int32Array(2304);
 function damerauLevenshtein(a,b){
-  const al=a.length, bl=b.length, d=[];
-  for(let i=0;i<=al;i++){ d.push(new Array(bl+1).fill(0)); d[i][0]=i; }
-  for(let j=0;j<=bl;j++) d[0][j]=j;
-  for(let i=1;i<=al;i++) for(let j=1;j<=bl;j++){
-    const cost = a[i-1]===b[j-1] ? 0 : 1;
-    d[i][j] = Math.min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost);
-    if(i>1 && j>1 && a[i-1]===b[j-2] && a[i-2]===b[j-1]) d[i][j] = Math.min(d[i][j], d[i-2][j-2]+1);
+  const al = a.length, bl = b.length;
+  const stride = bl + 1;
+  const req = (al + 1) * stride;
+  if(req > _dlBuf.length) _dlBuf = new Int32Array(req * 2);
+  const d = _dlBuf;
+  for(let i=0; i<=al; i++) d[i * stride] = i;
+  for(let j=0; j<=bl; j++) d[j] = j;
+  for(let i=1; i<=al; i++){
+    const iRow = i * stride;
+    const iPrev = (i - 1) * stride;
+    const iPrev2 = (i - 2) * stride;
+    const ai1 = a[i-1], ai2 = a[i-2];
+    for(let j=1; j<=bl; j++){
+      const cost = ai1 === b[j-1] ? 0 : 1;
+      let min = d[iPrev + j] + 1;
+      const ins = d[iRow + (j - 1)] + 1;
+      if(ins < min) min = ins;
+      const sub = d[iPrev + (j - 1)] + cost;
+      if(sub < min) min = sub;
+      if(i > 1 && j > 1 && ai1 === b[j-2] && ai2 === b[j-1]){
+        const trans = d[iPrev2 + (j - 2)] + 1;
+        if(trans < min) min = trans;
+      }
+      d[iRow + j] = min;
+    }
   }
-  return d[al][bl];
+  return d[al * stride + bl];
 }
 
 // ---- confusion-weighted distance ----
@@ -89,19 +108,38 @@ function substitutionCost(x,y){
   if(isAdjacentKey(x,y)) return 0.75;
   return 1.0;
 }
+let _wedBuf = new Float64Array(2304);
 function weightedEditDistance(a,b){
-  const al=a.length, bl=b.length, d=[];
-  for(let i=0;i<=al;i++){ d.push(new Array(bl+1).fill(0)); d[i][0]=i; }
-  for(let j=0;j<=bl;j++) d[0][j]=j;
-  for(let i=1;i<=al;i++) for(let j=1;j<=bl;j++){
-    const same = a[i-1]===b[j-1];
-    const subCost = same ? 0 : substitutionCost(a[i-1], b[j-1]);
-    const insCost = b[j-1]==="'" ? 0.4 : ((j>1 && b[j-1]===b[j-2]) ? 0.5 : 1.0);
-    const delCost = a[i-1]==="'" ? 0.4 : ((i>1 && a[i-1]===a[i-2]) ? 0.5 : 1.0);
-    d[i][j] = Math.min(d[i-1][j]+delCost, d[i][j-1]+insCost, d[i-1][j-1]+subCost);
-    if(i>1 && j>1 && a[i-1]===b[j-2] && a[i-2]===b[j-1]) d[i][j] = Math.min(d[i][j], d[i-2][j-2]+0.75);
+  const al = a.length, bl = b.length;
+  const stride = bl + 1;
+  const req = (al + 1) * stride;
+  if(req > _wedBuf.length) _wedBuf = new Float64Array(req * 2);
+  const d = _wedBuf;
+  for(let i=0; i<=al; i++) d[i * stride] = i;
+  for(let j=0; j<=bl; j++) d[j] = j;
+  for(let i=1; i<=al; i++){
+    const iRow = i * stride;
+    const iPrev = (i - 1) * stride;
+    const iPrev2 = (i - 2) * stride;
+    const ai1 = a[i-1], ai2 = a[i-2];
+    for(let j=1; j<=bl; j++){
+      const same = ai1 === b[j-1];
+      const subCost = same ? 0 : substitutionCost(ai1, b[j-1]);
+      const insCost = b[j-1] === "'" ? 0.4 : ((j > 1 && b[j-1] === b[j-2]) ? 0.5 : 1.0);
+      const delCost = ai1 === "'" ? 0.4 : ((i > 1 && ai1 === ai2) ? 0.5 : 1.0);
+      let min = d[iPrev + j] + delCost;
+      const ins = d[iRow + (j - 1)] + insCost;
+      if(ins < min) min = ins;
+      const sub = d[iPrev + (j - 1)] + subCost;
+      if(sub < min) min = sub;
+      if(i > 1 && j > 1 && ai1 === b[j-2] && ai2 === b[j-1]){
+        const trans = d[iPrev2 + (j - 2)] + 0.75;
+        if(trans < min) min = trans;
+      }
+      d[iRow + j] = min;
+    }
   }
-  return d[al][bl];
+  return d[al * stride + bl];
 }
 
 // ---------------------------------------------------------------
@@ -651,7 +689,10 @@ function buildPhoneticIndexes(){
 // anyone misspells anything the index is normally already there.
 (function primePhoneticIndexes(){
   if(typeof window === "undefined") return;
-  const idle = window.requestIdleCallback || (fn => setTimeout(() => fn({ timeRemaining:() => 8 }), 1));
+  const idle = window.requestIdleCallback ||
+    (typeof window.setTimeout === "function" ? (fn => window.setTimeout(() => fn({ timeRemaining:() => 8 }), 1)) :
+     (typeof setTimeout === "function" ? (fn => setTimeout(() => fn({ timeRemaining:() => 8 }), 1)) : null));
+  if(!idle) return;
   const step = deadline => {
     do { indexChunk(2000); }
     while(!indexesBuilt && deadline.timeRemaining && deadline.timeRemaining() > 4);
@@ -1021,7 +1062,7 @@ const AMERICAN_IRREGULARS = {
   maneuver:"manoeuvre", maneuvers:"manoeuvres", maneuvered:"manoeuvred",
   maneuvering:"manoeuvring", maneuverable:"manoeuvrable",
   furor:"furore", math:"maths", mom:"mum", moms:"mums", ax:"axe",
-  checkered:"chequered", tidbit:"titbit", tidbits:"titbits",
+  checkered:"chequered", checkerboard:"chequerboard", checkerboards:"chequerboards", tidbit:"titbit", tidbits:"titbits",
   aging:"ageing", judgment:"judgement", judgments:"judgements",
   fulfillment:"fulfilment", enrollment:"enrolment",
   installment:"instalment", skillful:"skilful", skillfully:"skilfully",
@@ -1116,9 +1157,47 @@ function agreementWeight(h){
   return total;
 }
 
+const INVENTED_IRREGULAR_PAST = {
+  bringed: "brought", winned: "won", seed: "saw", builded: "built",
+  readed: "read", feeled: "felt", writed: "wrote", eated: "ate",
+  sleeped: "slept", knowed: "knew", selled: "sold", buyed: "bought",
+  telled: "told", gived: "gave", thinked: "thought", gotted: "got",
+  speaked: "spoke", leaved: "left", finded: "found", catched: "caught",
+  standed: "stood", payed: "paid", spended: "spent", breaked: "broke",
+  keeped: "kept", maked: "made", runned: "ran", hanged: "hung",
+  comed: "came", drinked: "drank", goed: "went", forgetted: "forgot",
+  taked: "took", teached: "taught", fighted: "fought", sended: "sent",
+  drawed: "drew", growed: "grew", throwed: "threw", blowed: "blew",
+  flyed: "flew", fallned: "fell", falled: "fell", freezed: "froze",
+  heared: "heard", hearded: "heard", holded: "held", hitted: "hit",
+  hurted: "hurt", cutted: "cut", costed: "cost", putted: "put",
+  choosed: "chose", rided: "rode", sayed: "said", shaked: "shook",
+  shooted: "shot", sinked: "sank", sitted: "sat", stealed: "stole",
+  swimmed: "swam", understanded: "understood", waked: "woke", weared: "wore",
+  leavded: "left", bended: "bent", bited: "bit", digged: "dug",
+  hided: "hid", lended: "lent", lighted: "lit", losed: "lost",
+  meeted: "met", rised: "rose", shined: "shone", shrinked: "shrank",
+  shuted: "shut", slided: "slid", spinned: "spun", sticked: "stuck",
+  striked: "struck", sweared: "swore", sweeped: "swept", swinged: "swung",
+  teared: "tore"
+};
+
 const suggestCache = new Map();
 function suggestFor(lw){
   if(suggestCache.has(lw)) return suggestCache.get(lw);
+
+  if(INVENTED_IRREGULAR_PAST[lw]){
+    const fix = INVENTED_IRREGULAR_PAST[lw];
+    const result = {
+      type: "spelling",
+      suggestions: [fix],
+      confidence: "high",
+      kind: "irregular-verb",
+      reason: '"' + lw + '" is an invented regular form. The standard irregular past is "' + fix + '".'
+    };
+    suggestCache.set(lw, result);
+    return result;
+  }
 
   // 1. informal lexicon — decisive when it fires
   const inf = informalExpansion(lw);
@@ -1249,6 +1328,7 @@ function suggestFor(lw){
         : null
     };
   }
+  if(suggestCache.size >= 1000){ const k = suggestCache.keys().next().value; suggestCache.delete(k); }
   suggestCache.set(lw, result);
   return result;
 }

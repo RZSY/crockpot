@@ -1,7 +1,7 @@
 // ===============================================================
 // 4. TOKENISER + SENTENCE SPLITTER
 // ===============================================================
-const ABBREVIATIONS = S("mr mrs ms dr prof sr jr st vs etc eg ie inc ltd co no vol fig approx dept univ ave rd pp ed cf al");
+const ABBREVIATIONS = S("mr mrs ms dr prof sr jr st vs etc eg ie inc ltd co no vol fig approx dept univ ave rd pp ed cf al pm am");
 
 function tokenize(text){
   const re = /[A-Za-z]+(?:['\u2019][A-Za-z]+)*/g;
@@ -27,10 +27,11 @@ function splitSentences(text, tokens){
   let m;
   const cuts = [];
   while((m = boundary.exec(text))){
-    const before = text.slice(0, m.index);
+    const lookback = Math.max(0, m.index - 20);
+    const before = text.slice(lookback, m.index);
     const lastWord = (before.match(/([A-Za-z]+)$/) || [])[1];
     if(lastWord && ABBREVIATIONS.has(lastWord.toLowerCase()) && m[1] === ".") continue;
-    if(lastWord && lastWord.length === 1 && m[1] === ".") continue; // initials: J. R. Smith
+    if(lastWord && lastWord.length === 1 && lastWord === lastWord.toUpperCase() && m[1] === ".") continue; // initials: J. R. Smith
     cuts.push(m.index + m[0].length);
   }
   cuts.push(text.length);

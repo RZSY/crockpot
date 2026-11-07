@@ -62,9 +62,13 @@ const PARTICIPLE_TO_PAST = {};   // seen -> saw
 const IRREG_PAST = new Set();
 const IRREG_PART = new Set();
 const IRREG_BASE = new Set(Object.keys(IRREGULAR_VERBS));
+const IRREG_PAST_TO_BASE = new Map();
+const IRREG_PART_TO_BASE = new Map();
 for(const base in IRREGULAR_VERBS){
   const [past, part] = IRREGULAR_VERBS[base];
   IRREG_PAST.add(past); IRREG_PART.add(part);
+  if(!IRREG_PAST_TO_BASE.has(past)) IRREG_PAST_TO_BASE.set(past, base);
+  if(!IRREG_PART_TO_BASE.has(part)) IRREG_PART_TO_BASE.set(part, base);
   if(past !== part){
     PAST_TO_PARTICIPLE[past] = part;
     PARTICIPLE_TO_PAST[part] = past;
@@ -108,6 +112,9 @@ const COMMON_VERBS = S(`
  emphasise acknowledge apologise congratulate thank remind notify alert warn
  contact liaise coordinate collaborate consult verify validate authorise clarify
  reassure appreciate compensate reimburse invoice bill charge credit debit
+ repair praise admire wag lock rain please block polish taste bark request reply
+ protest object accuse accustom cycle shout consist emphasize apologize await approach
+ reach marry investigate resemble owe possess deserve doubt prefer belong
 `);
 const ALL_BASE_VERBS = new Set([...COMMON_VERBS, ...IRREG_BASE]);
 
@@ -157,7 +164,7 @@ const S_ENDING_SINGULAR = S(`
 `);
 const UNCOUNTABLE = S(`
  advice information money furniture luggage baggage equipment knowledge research evidence
- homework housework work traffic weather music art love happiness sadness anger courage
+ homework housework work traffic weather music art love happiness sadness anger courage hope patience confidence luck safety health
  water milk coffee tea juice rice bread butter cheese meat sugar salt pepper flour food
  air oxygen smoke sand snow rain ice wood paper plastic metal gold silver electricity
  time space energy progress education travel news software hardware data feedback training
@@ -165,10 +172,19 @@ const UNCOUNTABLE = S(`
 
 function endsWith(w, s){ return w.length > s.length && w.slice(-s.length) === s; }
 
+const VES_NOUNS = { calves: "calf", halves: "half", knives: "knife", leaves: "leaf", lives: "life", loaves: "loaf", scarves: "scarf", sheaves: "sheaf", shelves: "shelf", thieves: "thief", wives: "wife", wolves: "wolf", elves: "elf" };
+
 function singularise(w){
   if(IRREGULAR_SINGULARS[w]) return IRREGULAR_SINGULARS[w];
   if(endsWith(w,"ies")) return w.slice(0,-3) + "y";
-  if(endsWith(w,"ves")) return w.slice(0,-3) + "f";
+  if(endsWith(w,"ves")){
+    if(VES_NOUNS[w]) return VES_NOUNS[w];
+    return w.slice(0,-1);
+  }
+  if(endsWith(w, "ses")){
+    if(DICTIONARY.has(w.slice(0,-2))) return w.slice(0,-2);
+    if(DICTIONARY.has(w.slice(0,-1))) return w.slice(0,-1);
+  }
   if(/(ches|shes|sses|xes|zes)$/.test(w)) return w.slice(0,-2);
   if(endsWith(w,"oes")){
     // Two different plurals collide in "-oes": "hero"+"es" (no singular e)
@@ -205,8 +221,24 @@ function baseOfThird(w){
   if(w === "has") return "have";
   if(w === "does") return "do";
   if(w === "goes") return "go";
-  const s = singularise(w);
-  return s;
+  if(endsWith(w, "ies")){
+    const y = w.slice(0, -3) + "y";
+    if(ALL_BASE_VERBS.has(y)) return y;
+  }
+  if(/(ches|shes|sses|xes|zes)$/.test(w)){
+    const stem = w.slice(0, -2);
+    if(ALL_BASE_VERBS.has(stem)) return stem;
+  }
+  if(endsWith(w, "s")){
+    const dropS = w.slice(0, -1);
+    if(ALL_BASE_VERBS.has(dropS)) return dropS;
+    if(endsWith(w, "es")){
+      const dropES = w.slice(0, -2);
+      if(ALL_BASE_VERBS.has(dropES)) return dropES;
+    }
+    return dropS;
+  }
+  return w;
 }
 function pastOf(base){
   if(IRREGULAR_VERBS[base]) return IRREGULAR_VERBS[base][0];
@@ -240,9 +272,8 @@ function isPastForm(w){
          (stem.length>2 && stem[stem.length-1]===stem[stem.length-2] && ALL_BASE_VERBS.has(stem.slice(0,-1)));
 }
 function baseOfPast(w){
-  for(const b in IRREGULAR_VERBS){
-    if(IRREGULAR_VERBS[b][0] === w || IRREGULAR_VERBS[b][1] === w) return b;
-  }
+  if(IRREG_PAST_TO_BASE.has(w)) return IRREG_PAST_TO_BASE.get(w);
+  if(IRREG_PART_TO_BASE.has(w)) return IRREG_PART_TO_BASE.get(w);
   if(endsWith(w,"ed")){
     const stem = w.slice(0,-2);
     if(ALL_BASE_VERBS.has(stem)) return stem;
@@ -278,13 +309,14 @@ function isPluralNoun(w){
   return sing.length > 1 && DICTIONARY.has(sing);
 }
 // A word that can head a noun phrase: not a verb, not a function word.
+const NOUN_ING = S("meeting building morning evening wedding feeling meaning training warning opening painting gathering drawing seating clothing roofing");
 function isNounish(w){
   if(!DICTIONARY.has(w)) return false;
   if(PRONOUNS.has(w) || DETERMINERS.has(w) || PREPOSITIONS.has(w) || MODALS.has(w)) return false;
   if(BE_FORMS.has(w) || HAVE_FORMS.has(w) || DO_FORMS.has(w) || CONJUNCTIONS.has(w)) return false;
   if(COMMON_ADVERBS.has(w) || isAdverb(w)) return false;
   if(COMMON_ADJECTIVES.has(w)) return false;
-  if(isIngForm(w) || isPastForm(w)) return false;
+  if((isIngForm(w) && !NOUN_ING.has(w)) || isPastForm(w)) return false;
   if(isBaseVerb(w) && !isPluralNoun(w)) return false;
   return true;
 }

@@ -13,11 +13,11 @@ function punctuationIssues(text, add){
       why:'A space belongs after a comma, semicolon or colon.', fix:(m)=>m[1] + " " },
     { re:/[ ]{2,}(?=\S)/g, title:"Double space", cat:"punctuation",
       why:'One space between words.', fix:()=>" " },
-    { re:/([!?]){3,}/g, title:"Repeated punctuation", cat:"style",
+    { re:/([!?]){3,}/g, rule:"repeated-punct", severity:"advisory", title:"Repeated punctuation", cat:"style",
       why:'One mark carries the emphasis; a row of them reads as shouting.', fix:(m)=>m[1] },
-    { re:/\b([a-z]+)\.([A-Z][a-z]+)/g, title:"Missing space after a full stop", cat:"punctuation",
+    { re:/\b([a-z]+)\.([A-Z][a-z]+)/g, rule:"spacing", title:"Missing space after a full stop", cat:"punctuation",
       why:'Sentences are separated by a space.', fix:(m)=>m[1] + ". " + m[2] },
-    { re:/\s+'\s*s\b/g, title:"Detached possessive", cat:"punctuation",
+    { re:/\s+'\s*s\b/g, rule:"detached-possessive", severity:"critical", title:"Detached possessive", cat:"punctuation",
       why:"The possessive 's attaches to the noun it belongs to.", fix:()=>"'s" }
   ];
   for(const r of rules){
@@ -27,7 +27,7 @@ function punctuationIssues(text, add){
         const word = m[1].toLowerCase();
         if(ABBREVIATIONS.has(word)) continue;
       }
-      add({ cat:r.cat, rule:"spacing", severity:"critical",
+      add({ cat:r.cat, rule:r.rule || "spacing", severity:r.severity || (r.cat === "style" ? "advisory" : "critical"),
         start:m.index, end:m.index + m[0].length, original:m[0],
         suggestions:[r.fix(m)], title:r.title, why:r.why });
       if(m[0].length === 0) r.re.lastIndex++;

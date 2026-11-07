@@ -105,6 +105,35 @@ btnUndo.addEventListener("click", () => {
   editor.focus({ preventScroll: true });
 });
 
+window.addEventListener("keydown", (e) => {
+  if((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z") && !e.shiftKey){
+    if(history.length > 0 && (document.activeElement === editor || document.activeElement === document.body)){
+      e.preventDefault();
+      btnUndo.click();
+    }
+  }
+});
+
+const btnCopy = document.getElementById("btnCopy");
+if(btnCopy){
+  btnCopy.addEventListener("click", () => {
+    if(!editor.value) return;
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(editor.value).then(() => {
+        const orig = btnCopy.textContent;
+        btnCopy.textContent = "Copied!";
+        setTimeout(() => { btnCopy.textContent = orig; }, 1500);
+      }).catch(() => {
+        editor.select();
+        document.execCommand("copy");
+      });
+    } else {
+      editor.select();
+      document.execCommand("copy");
+    }
+  });
+}
+
 function escapeHtml(s){
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
@@ -158,6 +187,15 @@ function autosizeEditor(){
   editor.style.height = "auto";
   editor.style.height = editor.scrollHeight + "px";
   editorWrap.style.minHeight = "";
+}
+let autosizeScheduled = false;
+function scheduleAutosize(){
+  if(autosizeScheduled) return;
+  autosizeScheduled = true;
+  requestAnimationFrame(() => {
+    autosizeScheduled = false;
+    autosizeEditor();
+  });
 }
 
 // The margin-notes list follows the editor's height: as the text grows, the
@@ -300,7 +338,26 @@ function render(){
     notesEl.appendChild(empty);
     return;
   }
-  shown.forEach(issue => notesEl.appendChild(buildCard(issue)));
+  const MAX_INITIAL_CARDS = 60;
+  let renderLimit = MAX_INITIAL_CARDS;
+  if(activeKey){
+    const activeIdx = shown.findIndex(i => i.key === activeKey);
+    if(activeIdx >= renderLimit) renderLimit = activeIdx + 20;
+  }
+  const toRender = shown.slice(0, renderLimit);
+  toRender.forEach(issue => notesEl.appendChild(buildCard(issue)));
+  if(shown.length > renderLimit){
+    const moreBtn = document.createElement("button");
+    moreBtn.className = "btn sans";
+    moreBtn.style.margin = "1rem auto";
+    moreBtn.style.display = "block";
+    moreBtn.textContent = "Show " + (shown.length - renderLimit) + " more notes";
+    moreBtn.addEventListener("click", () => {
+      moreBtn.remove();
+      shown.slice(renderLimit).forEach(issue => notesEl.appendChild(buildCard(issue)));
+    });
+    notesEl.appendChild(moreBtn);
+  }
 }
 
 function recomputeScore(result, visible){
@@ -475,7 +532,7 @@ if(document.fonts && document.fonts.ready) document.fonts.ready.then(autosizeEdi
 
 let debounceTimer = null;
 editor.addEventListener("input", () => {
-  autosizeEditor();
+  scheduleAutosize();
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(render, 220);
 });

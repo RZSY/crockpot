@@ -6,4 +6,8 @@ const WORD_LIST = "a i the you to and of in is that it what for we my your this 
 const DICTIONARY = new Set(WORD_LIST);
 const RANK = new Map();
 WORD_LIST.forEach((w,i)=>RANK.set(w,i));
+"aisha jew jews chequerboard".split(" ").forEach((w, i) => {
+  DICTIONARY.add(w);
+  if(!RANK.has(w)) RANK.set(w, 5000 + i);
+});
 

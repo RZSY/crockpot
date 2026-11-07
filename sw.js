@@ -1,4 +1,4 @@
-const VERSION = "1.4.0";
+const VERSION = "1.4.4";
 const CACHE_NAME = "crockpot-" + VERSION;
 const APP_SHELL = [
   "./",
